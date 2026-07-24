@@ -758,7 +758,7 @@ el('resetSave').addEventListener('click',()=>{ if(confirm('Fortschritt wirklich 
 // ============================================================================
 let AC=null,master=null;
 function ensureAudio(){if(AC){if(AC.state==='suspended')AC.resume();return;}
-  try{AC=new (window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=muted?0:0.5;master.connect(AC.destination);}catch(e){AC=null;}}
+  try{AC=new (window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=muted?0:0.5;master.connect(AC.destination);startMusic();}catch(e){AC=null;}}
 function toggleMute(){muted=!muted;if(master)master.gain.value=muted?0:0.5;el('mute').textContent=muted?'🔈':'🔊';}
 function blip(f,d){if(!AC||muted)return;const o=AC.createOscillator(),g=AC.createGain();o.type='square';o.frequency.value=f;
   g.gain.setValueAtTime(0.001,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.22,AC.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
@@ -766,6 +766,38 @@ function blip(f,d){if(!AC||muted)return;const o=AC.createOscillator(),g=AC.creat
 function beep(f,d){if(!AC||muted)return;const o=AC.createOscillator(),g=AC.createGain();o.type='sawtooth';o.frequency.value=f;
   g.gain.setValueAtTime(0.001,AC.currentTime);g.gain.exponentialRampToValueAtTime(0.3,AC.currentTime+0.01);g.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+d);
   o.connect(g);g.connect(master);o.start();o.stop(AC.currentTime+d+0.02);}
+// ---------- Hintergrundmusik (prozeduraler 8-Bit-Loop, kein Audio-Asset) ----------
+let musicGain=null,musicStarted=false,musicTimer=null,nextNoteTime=0,curStep=0;
+const STEP=60/132/4;                       // Sechzehntel bei 132 BPM
+const BASS=[110,null,110,null,146.83,null,110,null,130.81,null,130.81,null,98,null,110,null];
+const LEAD=[null,440,null,523.25,null,440,null,349.23,null,392,null,523.25,null,440,392,null];
+function musicNote(freq,t,dur,type,vol){
+  const o=AC.createOscillator(),g=AC.createGain();o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+0.015);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);g.connect(musicGain);o.start(t);o.stop(t+dur+0.02);
+}
+function musicHat(t){
+  const buf=AC.createBuffer(1,AC.sampleRate*0.04,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+  const src=AC.createBufferSource();src.buffer=buf;const hp=AC.createBiquadFilter();hp.type='highpass';hp.frequency.value=6000;
+  const g=AC.createGain();g.gain.setValueAtTime(0.16,t);g.gain.exponentialRampToValueAtTime(0.0001,t+0.04);
+  src.connect(hp);hp.connect(g);g.connect(musicGain);src.start(t);
+}
+function musicScheduler(){
+  while(nextNoteTime<AC.currentTime+0.12){
+    const b=BASS[curStep],l=LEAD[curStep];
+    if(b)musicNote(b,nextNoteTime,STEP*1.9,'triangle',0.15);
+    if(l)musicNote(l,nextNoteTime,STEP*0.9,'square',0.07);
+    if(curStep%2===0)musicHat(nextNoteTime);
+    nextNoteTime+=STEP;curStep=(curStep+1)%BASS.length;
+  }
+}
+function startMusic(){
+  if(musicStarted||!AC)return;musicStarted=true;
+  musicGain=AC.createGain();musicGain.gain.value=0.32;musicGain.connect(master);
+  nextNoteTime=AC.currentTime+0.05;curStep=0;
+  musicTimer=setInterval(musicScheduler,25);
+}
 function boomSound(type){if(!AC||muted)return;const dur=type==='nitro'?1.0:type==='c4'?0.85:type==='tnt'?0.65:0.5;
   const buf=AC.createBuffer(1,AC.sampleRate*dur,AC.sampleRate),d=buf.getChannelData(0);
   for(let i=0;i<d.length;i++){const t=i/d.length;d[i]=(Math.random()*2-1)*Math.pow(1-t,2);}
